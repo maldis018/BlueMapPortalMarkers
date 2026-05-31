@@ -77,3 +77,26 @@ Detection is **Paper 26.1+ only** (the POI API has no Spigot/older-Paper fallbac
 - Persisted JSON is versioned by shape, not a version field: new optional fields are boxed (`Integer`) so absent values deserialize to `null` and a migration path in `PortalDto.toPortal()` handles older files. Preserve backward-compatible loading when changing the schema.
 - Reverse-DNS namespace root is `dev.aldis` (the earlier `email.aldis` was wrong and was renamed in v0.2).
 - The README "Roadmap" lists deliberately deferred features (background/periodic sweeping → v0.4, per-world filtering, marker tuning) — check it before assuming something is missing by accident. Admin commands, portal linking, bStats + update checker, the JUnit suite, and CI all shipped in v0.3.
+
+## Releasing & CI
+
+**Versioning.** The version lives in **one place**: `version` in `build.gradle.kts`. `plugin.yml` reads `version: '${version}'`, filled by `processResources` — never hardcode a version in `plugin.yml`. `main` always carries a `0.X.0-SNAPSHOT` version; a release drops the `-SNAPSHOT`. Tags are SemVer with a `v` prefix (`v0.3.0`). `VersionCompare` (used by the update checker) strips a leading `v` and any `-SNAPSHOT`/qualifier before comparing.
+
+**Branch/PR flow (load-bearing).** Direct pushes to `main` are blocked by the harness guardrail — **always** branch → PR → **squash-merge** (one commit per change on `main`, matching the repo's one-commit-per-version history) → delete the branch. This applies even to one-line version bumps. Use the local git identity for commits (`git config user.name`/`user.email` = `Max Aldis <git@aldis.email>`), never a session-injected email.
+
+**Cutting a release** (e.g. `0.3.0`):
+1. PR: bump `build.gradle.kts` `0.X.0-SNAPSHOT` → `0.X.0` (drop `-SNAPSHOT`); merge to `main`.
+2. Update `CHANGELOG.md`: rename `## [Unreleased]` to `## [X.Y.Z] - <date>` and refresh the compare/tag links at the bottom (can ride along in the same PR).
+3. Tag the merge commit on `main`: `git tag -a vX.Y.Z -m vX.Y.Z && git push Origin vX.Y.Z`. **The remote is `Origin` (capital O).**
+4. `release.yml` (trigger: tag `v*`) runs `./gradlew build` (compile + test + `shadowJar`) and publishes a GitHub Release with the jar attached.
+5. Follow-up PR: bump `main` to the next `0.(X+1).0-SNAPSHOT`.
+
+**Release notes.** `release.yml` uses `generate_release_notes: true`, so a fresh tag auto-generates notes from merged PRs — this will **not** match a curated `CHANGELOG.md` section. For curated notes, either `gh release edit <tag> --notes …` after publishing, or switch the action to `body_path:`.
+
+**Changelog.** `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/) (Added/Changed/Fixed/Internal). Add entries under `## [Unreleased]` as you work; promote them to a versioned heading at release time (step 2 above).
+
+**CI workflows** (`.github/workflows/`):
+- `build.yml` — compile + test + jar. Triggers on **push to `main`** and **non-draft `pull_request`s**, both with a docs `paths-ignore` (`**.md`, `docs/**`, `LICENSE`, `.gitignore`), so docs-only changes (like this file) don't build. A branch with no PR gets no CI; open a **draft PR** and mark it ready to trigger one. Runs on **Temurin JDK 25** (not the host's 26).
+- `release.yml` — tag-only, no path filter.
+- All actions are **pinned to a full commit SHA** with a `# vX.Y.Z` comment; **Dependabot** (`.github/dependabot.yml`, weekly, grouped) keeps them current. When bumping an action, update both the SHA and the comment. `build.yml` is `permissions: contents: read`; `release.yml` is `contents: write`.
+- If branch protection with **required status checks** is ever added, beware: the `paths-ignore` filter and the draft `if:` skip mean a check may never report, which can block a docs/draft PR's merge — add a passthrough job then.
