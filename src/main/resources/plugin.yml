@@ -1,0 +1,7 @@
+name: BlueMapPortalMarkers
+version: 0.1.0-SNAPSHOT
+main: email.aldis.bluemapportalmarkers.NetherPortalMarkersPlugin
+api-version: '1.21'
+author: Max Aldis
+description: Adds a toggleable layer of Nether Portal markers to BlueMap, auto-updating as portals are created and discovered.
+softdepend: [BlueMap]

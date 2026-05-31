@@ -1,0 +1,24 @@
+# BlueMapPortalMarkers configuration
+
+markers:
+  # Label shown for the toggleable marker set in the BlueMap UI
+  label: "Nether Portals"
+  # Whether the layer starts hidden (users toggle it on)
+  default-hidden: false
+  # Custom icon asset address relative to the BlueMap web root.
+  # Leave empty to use BlueMap's default POI icon.
+  icon: ""
+  # Icon anchor in pixels (where the icon "points"). Only used if icon is set.
+  icon-anchor-x: 25
+  icon-anchor-y: 45
+
+discovery:
+  # Radius (in blocks) of the upfront POI sweep performed around spawn and
+  # online players when the server/world loads. Larger = more coverage, more work.
+  sweep-radius: 256
+  # Also query POIs when a chunk loads (cheap; covers areas players roam into).
+  scan-on-chunk-load: true
+
+storage:
+  # File (under the plugin data folder) where discovered portals are persisted.
+  file: "portals.json"
