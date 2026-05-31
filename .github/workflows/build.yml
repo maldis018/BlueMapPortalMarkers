@@ -17,6 +17,10 @@ on:
       - "LICENSE"
       - ".gitignore"
 
+# Least privilege: CI only needs to read the repo (artifact upload needs no extra scope).
+permissions:
+  contents: read
+
 # One in-flight run per ref; cancel superseded runs on PR branches (but let
 # main builds finish so the default branch always has a complete result).
 concurrency:
@@ -28,25 +32,29 @@ jobs:
     # main pushes always run; PR builds are skipped while the PR is a draft.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      # Third-party and first-party actions are pinned to a full commit SHA
+      # (mutable tags can be repointed); the trailing comment tracks the version.
+      # Dependabot (.github/dependabot.yml) keeps these SHAs up to date.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       # JDK 25 (LTS): the project compiles --release 25 and the pinned Gradle 9.4
       # wrapper runs on JDK 25, so CI does not need the dev host's JDK 26.
       - name: Set up JDK 25
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
           distribution: temurin
           java-version: "25"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
 
       - name: Build (compile + test + jar)
         run: ./gradlew build --no-daemon
 
       - name: Upload jar artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: BlueMapPortalMarkers-jar
           path: build/libs/*.jar
