@@ -30,11 +30,17 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
 
     private final PortalStore store;
     private final Log log;
-    private final String markerSetLabel;
-    private final boolean defaultHidden;
-    private final String iconAddress;
-    private final int anchorX;
-    private final int anchorY;
+    // Marker appearance is mutable so /bmportals reload can re-apply it live.
+    private volatile String markerSetLabel;
+    private volatile boolean defaultHidden;
+    private volatile String iconAddress;
+    private volatile int anchorX;
+    private volatile int anchorY;
+    // Portal-linking: null when disabled. The dimensions map is owned by the
+    // plugin (populated on the main thread) and read here off-main, so it is a
+    // thread-safe map; we never mutate it.
+    private volatile PortalLinker linker;
+    private final Map<String, PortalLinker.Dimension> dimensions;
 
     public BlueMapBridge(PortalStore store,
                          Log log,
@@ -42,7 +48,9 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
                          boolean defaultHidden,
                          String iconAddress,
                          int anchorX,
-                         int anchorY) {
+                         int anchorY,
+                         PortalLinker linker,
+                         Map<String, PortalLinker.Dimension> dimensions) {
         this.store = store;
         this.log = log;
         this.markerSetLabel = markerSetLabel;
@@ -50,6 +58,13 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
         this.iconAddress = iconAddress == null ? "" : iconAddress;
         this.anchorX = anchorX;
         this.anchorY = anchorY;
+        this.linker = linker;
+        this.dimensions = dimensions;
+    }
+
+    /** Swap the portal linker (or {@code null} to disable linking). Used by reload. */
+    public void setLinker(PortalLinker linker) {
+        this.linker = linker;
     }
 
     /**
@@ -83,7 +98,7 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
             if (bmWorld == null) {
                 continue;
             }
-            POIMarker marker = buildMarker(portal);
+            POIMarker marker = buildMarker(api, portal, snapshot);
             for (BlueMapMap map : bmWorld.getMaps()) {
                 getOrCreateMarkerSet(map).getMarkers().put(portal.markerId(), marker);
             }
@@ -105,7 +120,7 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
         if (bmWorld == null) {
             return;
         }
-        POIMarker marker = buildMarker(p);
+        POIMarker marker = buildMarker(api, p, store.all());
         for (BlueMapMap map : bmWorld.getMaps()) {
             getOrCreateMarkerSet(map).getMarkers().put(p.markerId(), marker);
         }
@@ -134,6 +149,42 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
         }
     }
 
+    /**
+     * Replace the marker-appearance settings (used by {@code /bmportals reload}).
+     * Call {@link #refresh()} afterwards to push the changes onto the live map.
+     */
+    public void updateMarkerConfig(String markerSetLabel, boolean defaultHidden,
+                                   String iconAddress, int anchorX, int anchorY) {
+        this.markerSetLabel = markerSetLabel;
+        this.defaultHidden = defaultHidden;
+        this.iconAddress = iconAddress == null ? "" : iconAddress;
+        this.anchorX = anchorX;
+        this.anchorY = anchorY;
+    }
+
+    /**
+     * Re-apply the current appearance to the live map: update each existing
+     * marker set's label/visibility, then rebuild all markers (picking up icon
+     * changes). No-op if BlueMap isn't currently enabled — the next
+     * {@link #accept} rebuild will reflect the new settings anyway.
+     */
+    public void refresh() {
+        Optional<BlueMapAPI> instance = BlueMapAPI.getInstance();
+        if (instance.isEmpty()) {
+            return;
+        }
+        BlueMapAPI api = instance.get();
+        for (BlueMapMap map : api.getMaps()) {
+            MarkerSet set = map.getMarkerSets().get(MARKER_SET_ID);
+            if (set != null) {
+                set.setLabel(markerSetLabel);
+                set.setToggleable(true);
+                set.setDefaultHidden(defaultHidden);
+            }
+        }
+        accept(api);
+    }
+
     /** Get the existing marker set for a map, or atomically build and install one. */
     private MarkerSet getOrCreateMarkerSet(BlueMapMap map) {
         // computeIfAbsent so two threads can't both build and overwrite each other.
@@ -145,21 +196,76 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
     }
 
     /** Build the POI marker for a portal (icon if configured, else default). */
-    private POIMarker buildMarker(Portal p) {
+    private POIMarker buildMarker(BlueMapAPI api, Portal p, Collection<Portal> candidates) {
         // Escape user-influenced text (world name, coords) before embedding in HTML.
         String coords = htmlEscape(Math.round(p.x()) + ", " + Math.round(p.y()) + ", " + Math.round(p.z()));
-        String detail = "<b>Nether Portal</b><br>" + htmlEscape(p.worldName())
-                + " @ " + coords;
+        StringBuilder detail = new StringBuilder()
+                .append("<b>Nether Portal</b><br>")
+                .append(htmlEscape(p.worldName()))
+                .append(" @ ")
+                .append(coords);
+        appendLinkSection(detail, api, p, candidates);
         POIMarker.Builder b = POIMarker.builder()
                 .label("Nether Portal")
                 .position(p.x(), p.y() + 1, p.z())
-                .detail(detail);
+                .detail(detail.toString());
         if (!iconAddress.isEmpty()) {
             b.icon(iconAddress, anchorX, anchorY);
         } else {
             b.defaultIcon();
         }
         return b.build();
+    }
+
+    /**
+     * Append the predicted Overworld&harr;Nether link section to a marker's
+     * detail HTML: the predicted counterpart coordinates (always, when a
+     * prediction applies) plus a clickable BlueMap deep-link to the nearest known
+     * counterpart portal when one exists. Worded as a prediction, never a
+     * guarantee. No-op when linking is disabled or doesn't apply.
+     */
+    private void appendLinkSection(StringBuilder detail, BlueMapAPI api, Portal p, Collection<Portal> candidates) {
+        PortalLinker currentLinker = this.linker;
+        if (currentLinker == null) {
+            return;
+        }
+        PortalLinker.Prediction pred = currentLinker.predict(p, candidates, dimensions);
+        if (!pred.hasPrediction()) {
+            return;
+        }
+        String predCoords = htmlEscape(Math.round(pred.x()) + ", " + Math.round(pred.y()) + ", " + Math.round(pred.z()));
+        detail.append("<br><br><i>Predicted link</i> &rarr; ").append(predCoords);
+
+        Portal counterpart = pred.counterpart();
+        if (counterpart == null) {
+            detail.append("<br>(no known portal there yet)");
+            return;
+        }
+        String mapId = firstMapId(api, counterpart);
+        if (mapId == null) {
+            detail.append("<br>(linked portal known; map not currently loaded)");
+            return;
+        }
+        // BlueMap location hash (verified against BlueMapApp.js): exactly 10
+        // colon-separated values — map:x:y:z:distance:rotation:angle:tilt:ortho:state.
+        String href = "#" + mapId + ":"
+                + Math.round(counterpart.x()) + ":"
+                + Math.round(counterpart.y()) + ":"
+                + Math.round(counterpart.z())
+                + ":1000:0:0:0:0:perspective";
+        detail.append("<br><a href=\"").append(htmlEscape(href)).append("\">Go to linked portal</a>");
+    }
+
+    /** First BlueMap map id for the counterpart's world, or {@code null} if none/unknown. */
+    private String firstMapId(BlueMapAPI api, Portal counterpart) {
+        BlueMapWorld world = resolveWorldByName(api, counterpart);
+        if (world == null) {
+            return null;
+        }
+        for (BlueMapMap map : world.getMaps()) {
+            return map.getId();
+        }
+        return null;
     }
 
     /**

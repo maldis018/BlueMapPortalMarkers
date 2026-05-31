@@ -1,7 +1,16 @@
 name: BlueMapPortalMarkers
-version: 0.2.0-SNAPSHOT
+version: '${version}'
 main: dev.aldis.bluemapportalmarkers.NetherPortalMarkersPlugin
 api-version: '1.21'
 author: Max Aldis
 description: Adds a toggleable layer of Nether Portal markers to BlueMap, auto-updating as portals are created and discovered.
 softdepend: [BlueMap]
+commands:
+  bmportals:
+    description: Manage the Nether Portal marker layer (reload, sweep, stats, purge).
+    usage: /bmportals <reload|sweep|stats|purge>
+    permission: bmportals.admin
+permissions:
+  bmportals.admin:
+    description: Use the /bmportals admin commands.
+    default: op

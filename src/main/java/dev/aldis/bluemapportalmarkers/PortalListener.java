@@ -10,6 +10,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.event.world.PortalCreateEvent;
+import org.bukkit.event.world.WorldLoadEvent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,7 +35,7 @@ public final class PortalListener implements Listener {
     private final PortalStore store;
     private final BlueMapBridge bridge;
     private final PoiSweeper sweeper;
-    private final boolean scanOnChunkLoad;
+    private volatile boolean scanOnChunkLoad;
     private final int chunkQueryRadius;
     private final Log log;
 
@@ -64,6 +65,15 @@ public final class PortalListener implements Listener {
 
     private static long packChunkKey(int chunkX, int chunkZ) {
         return ((long) chunkX << 32) ^ (chunkZ & 0xffffffffL);
+    }
+
+    /**
+     * Toggle per-chunk scanning at runtime ({@code /bmportals reload}). Note that
+     * turning this on does not retroactively scan chunks already loaded — only
+     * chunks loaded after the toggle fire {@link ChunkLoadEvent}.
+     */
+    public void setScanOnChunkLoad(boolean scanOnChunkLoad) {
+        this.scanOnChunkLoad = scanOnChunkLoad;
     }
 
     /**
@@ -178,5 +188,15 @@ public final class PortalListener implements Listener {
         if (worldChunks.isEmpty()) {
             queriedChunks.remove(e.getChunk().getWorld().getUID());
         }
+    }
+
+    /**
+     * Record a newly loaded world's dimension so portal linking can classify its
+     * portals (worlds loaded after startup, e.g. via Multiverse, would otherwise
+     * be missing from the dimension map until the next reload).
+     */
+    @EventHandler
+    public void onWorldLoad(WorldLoadEvent e) {
+        plugin.registerWorldDimension(e.getWorld());
     }
 }

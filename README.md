@@ -15,7 +15,7 @@ Portals reach the map through several complementary mechanisms, all feeding a si
 
 **Clustering & dedup.** A POI query returns one result per portal *block*, so adjacent blocks are flood-fill clustered into a single portal (centroid + bounding box). Re-detections of the same portal are deduplicated by bounding-box overlap (with a small centroid-distance safety net), so a portal yields exactly one marker no matter how many times or ways it's found.
 
-Each portal is rendered as a clickable **POI marker** at the frame centroid, with an HTML detail popup showing the world and coordinates.
+Each portal is rendered as a clickable **POI marker** at the frame centroid, with an HTML detail popup showing the world and coordinates. When **portal linking** is enabled, the popup also shows the predicted Overworld↔Nether counterpart (vanilla 8:1 rule) and, when a portal is already known near that spot, a clickable deep-link that flies the BlueMap viewer to it.
 
 ## Requirements
 
@@ -43,10 +43,27 @@ Each portal is rendered as a clickable **POI marker** at the frame centroid, wit
 | `markers.icon-anchor-y` | `45` | Icon anchor Y in pixels (only used when a custom icon is set). |
 | `discovery.sweep-radius` | `256` | Block radius of the upfront POI sweep around spawn and online players. Larger = more coverage, more work. |
 | `discovery.scan-on-chunk-load` | `true` | Also query POIs when a chunk loads (cheap; covers areas players roam into). |
+| `linking.enabled` | `true` | Add a "predicted link" section (and deep-link) to each portal popup, pairing it with its counterpart in the other dimension. |
+| `linking.search-tolerance` | `128` | Horizontal radius (blocks) around the predicted target within which a known portal counts as the link. |
 | `storage.file` | `"portals.json"` | File (under the plugin data folder) where discovered portals are persisted. |
 | `logging.debug` | `false` | When true, verbose diagnostics are printed to the console with a `[DEBUG]` prefix. Normal events always log at INFO. |
+| `metrics.enabled` | `true` | Anonymous aggregate usage statistics via [bStats](https://bstats.org/). Opt out here or server-wide in `plugins/bStats/config.yml`. |
+| `update-check.enabled` | `true` | On enable, check GitHub Releases for a newer version and log one INFO line if found (off-main, fails silently when offline). |
 
-Config is read at startup. Changing it currently requires a server restart (a `/reload`-style command is planned — see Roadmap).
+Most settings can be re-applied at runtime with `/bmportals reload` (see Commands). `storage.file` is the exception — changing it still needs a restart.
+
+## Commands
+
+All `/bmportals` subcommands require the `bmportals.admin` permission (default: ops).
+
+| Command | Description |
+| --- | --- |
+| `/bmportals reload` | Re-read `config.yml` and apply marker appearance, sweep radius, chunk-scan toggle, debug, and linking settings live. Reports anything (e.g. `storage.file`) that needs a restart. |
+| `/bmportals sweep [radius]` | Force a sweep around every world spawn + online player. |
+| `/bmportals sweep me [radius]` / `<player> [radius]` | Sweep around you / a named player. |
+| `/bmportals sweep <x> [y] <z>` | Full-height sweep at coordinates in your world (Y is ignored on purpose, so altitude can't make it miss). Player-only. |
+| `/bmportals stats` | Show the total and per-world portal counts. |
+| `/bmportals purge [world]` | Remove stored portals (one world, or all) and their markers, then persist. Useful after removing portals with WorldEdit (which doesn't fire `BlockBreakEvent`). |
 
 ### Logging
 
@@ -78,15 +95,16 @@ Discovered portals are stored in `plugins/BlueMapPortalMarkers/portals.json` as 
 Requires a JDK (the build is verified on **JDK 26**) — no separate JDK install is needed beyond that, the Gradle wrapper handles the rest.
 
 ```sh
-./gradlew build
+./gradlew build       # compiles, runs the JUnit suite, and builds the shaded jar
 ```
 
-The plugin jar is written to `build/libs/BlueMapPortalMarkers-<version>.jar`.
+The plugin jar is written to `build/libs/BlueMapPortalMarkers-<version>.jar` (the shaded jar — it bundles bStats).
 
 Notes:
 - The wrapper pins **Gradle 9.4.0**, the first Gradle release able to *run* on JDK 26.
-- Sources compile with `--release 25` (paper-api 26.1.x requires a Java 25+ runtime).
-- `paper-api` and `bluemap-api` are `compileOnly` — they are provided by the server at runtime and never bundled.
+- Sources compile with `--release 25` (paper-api 26.1.x requires a Java 25+ runtime). CI builds on JDK 25.
+- `paper-api` and `bluemap-api` are `compileOnly` — provided by the server at runtime, never bundled. **bStats** is the sole bundled dependency: it's shaded and relocated to `dev.aldis.bluemapportalmarkers.bstats` by `./gradlew shadowJar`.
+- A JUnit 5 suite covers the pure domain logic (`Portal`, `PortalClustering`, `PortalStore` incl. migration, `PortalLinker`, `VersionCompare`); run it with `./gradlew test`. GitHub Actions builds + tests on every push/PR and publishes the jar to a Release on `v*` tags.
 
 ## Compatibility & limitations
 
@@ -96,8 +114,10 @@ Notes:
 
 ## Roadmap
 
+Shipped in v0.3: admin commands (`/bmportals`), Overworld↔Nether portal linking, bStats metrics + update checker, a JUnit suite, and GitHub Actions CI/releases.
+
 Planned for a later release:
 
-- Admin commands (`/bmportals reload`, `sweep [radius]`, `stats`, `purge [world]`) and a permission node.
+- Background/periodic sweeping with per-tick work budgeting (deferred to v0.4 — needs live performance testing).
 - Per-world include/exclude filtering.
 - Marker tuning: view min/max distance, sorting, and customizable label/detail templates.

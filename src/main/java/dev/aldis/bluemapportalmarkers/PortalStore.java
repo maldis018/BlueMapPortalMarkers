@@ -98,6 +98,32 @@ public final class PortalStore {
         return new ArrayList<>(portals.values());
     }
 
+    /**
+     * Remove and return every stored portal in the given world (used by the
+     * {@code /bmportals purge <world>} admin command).
+     */
+    public synchronized List<Portal> removeWorld(UUID worldId) {
+        List<Portal> removed = new ArrayList<>();
+        portals.values().removeIf(p -> {
+            if (p.worldId().equals(worldId)) {
+                removed.add(p);
+                return true;
+            }
+            return false;
+        });
+        return removed;
+    }
+
+    /**
+     * Remove and return every stored portal (used by {@code /bmportals purge}
+     * with no world argument). Caller is responsible for dropping the markers.
+     */
+    public synchronized List<Portal> clear() {
+        List<Portal> removed = new ArrayList<>(portals.values());
+        portals.clear();
+        return removed;
+    }
+
     public Collection<Portal> inWorld(UUID worldId) {
         List<Portal> out = new ArrayList<>();
         for (Portal p : portals.values()) {
