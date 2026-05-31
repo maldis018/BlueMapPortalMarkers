@@ -19,6 +19,16 @@ discovery:
   # Also query POIs when a chunk loads (cheap; covers areas players roam into).
   scan-on-chunk-load: true
 
+linking:
+  # Add a "predicted link" section to each portal's popup, pairing it with its
+  # counterpart in the other dimension via the vanilla 8:1 rule and (when a
+  # portal is already known near the predicted spot) a clickable BlueMap
+  # deep-link to it. This is a prediction, not a guarantee.
+  enabled: true
+  # Horizontal search radius (blocks) around the predicted target within which a
+  # known portal counts as the link.
+  search-tolerance: 128
+
 storage:
   # File (under the plugin data folder) where discovered portals are persisted.
   file: "portals.json"
@@ -28,3 +38,14 @@ logging:
   # counts) are printed to the console with a [DEBUG] prefix. Normal events
   # (portal added/removed, startup sweep total) always log at INFO regardless.
   debug: false
+
+metrics:
+  # Anonymous usage statistics via bStats (https://bstats.org/plugin/bukkit/...).
+  # Aggregate only; no personal or world data. Set false to opt out (bStats also
+  # honours the server-wide opt-out in plugins/bStats/config.yml).
+  enabled: true
+
+update-check:
+  # On enable, check GitHub Releases for a newer version and log one INFO line if
+  # found. Runs off the main thread and fails silently when offline.
+  enabled: true

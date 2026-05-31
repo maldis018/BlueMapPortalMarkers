@@ -17,7 +17,7 @@ import java.util.logging.Logger;
 public final class Log {
 
     private final Logger logger;
-    private final boolean debug;
+    private volatile boolean debug;
 
     public Log(Logger logger, boolean debug) {
         this.logger = logger;
@@ -26,6 +26,11 @@ public final class Log {
 
     public boolean isDebug() {
         return debug;
+    }
+
+    /** Update the debug flag at runtime (used by {@code /bmportals reload}). */
+    public void setDebug(boolean debug) {
+        this.debug = debug;
     }
 
     /** Always-visible operational message. */

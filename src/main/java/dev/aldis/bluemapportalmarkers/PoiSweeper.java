@@ -77,6 +77,31 @@ public final class PoiSweeper {
     }
 
     /**
+     * Sweep a full-height vertical column centred on world coordinates
+     * {@code (x, z)} within {@code radius} (horizontally) and add newly
+     * discovered portals to the store. Like {@link #queryChunk}, the query is
+     * centred at the world's vertical midpoint with the radius expanded to span
+     * the full world height, so the caller's Y (if any) is irrelevant — this is
+     * the path used by the {@code /bmportals sweep <coords>} command to avoid
+     * silently missing portals at an unexpected altitude.
+     *
+     * @return the list of portals that were newly added (empty if none).
+     */
+    public List<Portal> sweepColumn(World world, double x, double z, int radius) {
+        int midY = (world.getMinHeight() + world.getMaxHeight()) / 2;
+        int effectiveRadius = Math.max(radius, (world.getMaxHeight() - world.getMinHeight()) / 2 + 8);
+        Location center = new Location(world, x, midY, z);
+        // Paper POI API (PR #12117, Paper 26.1)
+        List<PoiSearchResult> results = world.locateAllPoiInRange(
+                center,
+                pt -> pt.equals(PoiTypes.NETHER_PORTAL),
+                effectiveRadius,
+                PoiType.Occupancy.ANY);
+
+        return collectAndStore(world, results);
+    }
+
+    /**
      * Turn POI search results into clustered portal centroids and store any new
      * ones.
      */

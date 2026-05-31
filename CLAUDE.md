@@ -9,17 +9,20 @@ A Paper (Minecraft server) plugin that adds a toggleable "Nether Portals" marker
 ## Build & verify
 
 ```sh
-./gradlew build          # compiles + jars → build/libs/BlueMapPortalMarkers-<version>.jar
+./gradlew build          # compiles + tests + shaded jar → build/libs/BlueMapPortalMarkers-<version>.jar
+./gradlew test           # runs the JUnit 5 suite
+./gradlew shadowJar      # produces the shaded, distributable jar (bStats bundled)
 ```
 
-- **There is no test suite** and no test framework wired in — `./gradlew test` is a no-op. Don't claim tests pass; there are none to run.
-- Verification of data-layer logic (e.g. the `portals.json` migration) has been done with throwaway **`jshell`** scripts run against `build/classes/java/main` plus the gson jar from `~/.gradle/caches`. That's the established pattern for exercising pure logic without a live server; full behavior requires a real Paper 26.1 + BlueMap server (not available in this environment).
+- **There is a JUnit 5 test suite** (since v0.3) under `src/test/java`, covering the pure domain logic: `Portal`, `PortalClustering`, `PortalStore` (incl. save/load + v0.1→v0.2 migration), `PortalLinker` (8:1 pairing), and `VersionCompare`. `./gradlew build` runs it. Bukkit/BlueMap-touching classes are deliberately *not* unit-tested (no MockBukkit) — keep new pure logic in Bukkit-free classes so it stays testable (this is exactly why `VersionCompare` is split out of `UpdateChecker`, which holds a `JavaPlugin` and so can't load on the test classpath).
+- The **plain `jar` task is disabled**; `shadowJar` (classifier `""`) is the single canonical output. The distributable now bundles **only** bStats, relocated to `dev.aldis.bluemapportalmarkers.bstats`.
+- For ad-hoc pure-logic checks the old **`jshell`** pattern still works, but prefer adding a JUnit test. **v0.2 was validated end-to-end on a real Paper + BlueMap server (2026-05-31).** No live server is available *in this dev environment*, so runtime-dependent changes (events, commands, BlueMap rendering, threading, bStats, the update checker) still need a real server to confirm.
 
 ## Toolchain constraints (these are load-bearing — do not "simplify" them)
 
 - **Sources compile with `--release 25`**, not a Java toolchain. `paper-api` 26.1.x publishes Gradle metadata requiring a **JVM runtime of 25+**, so a Java 21 target fails dependency resolution. `build.gradle.kts` deliberately uses `tasks.withType<JavaCompile> { options.release.set(25) }` and **no `java.toolchain` block** (the build host only has JDK 26; a toolchain would try to provision a separate JDK).
 - **The Gradle wrapper is pinned to 9.4.0** because that is the first Gradle release able to *run* on JDK 26. Don't downgrade it.
-- Both dependencies are **`compileOnly`** (`io.papermc.paper:paper-api`, `de.bluecolored:bluemap-api`) — the server provides them at runtime; never bundle/shade them.
+- The Paper/BlueMap dependencies are **`compileOnly`** (`io.papermc.paper:paper-api`, `de.bluecolored:bluemap-api`) — the server provides them at runtime; never bundle/shade them. **The one exception is bStats** (`org.bstats:bstats-bukkit`, `implementation`): the server does *not* provide it, so it is shaded **and relocated** into the plugin jar by `shadowJar`. gson is also still provided by the server (used `compileOnly` via paper-api in main; on the test classpath via `testImplementation`) — do not shade it.
 
 ## Architecture (the big picture)
 
@@ -34,11 +37,14 @@ detection sources ──▶ PortalStore (canonical, deduped) ──▶ BlueMapBr
 - **`PortalStore`** — the single source of truth. A `ConcurrentHashMap<markerId, Portal>` with `synchronized` mutators. Dedup is by **bounding-box overlap** (plus a small centroid epsilon), so one physical portal yields exactly one entry no matter how many detection sources hit it. Persists/loads a list of plain DTOs via gson (atomic temp-file-then-move write).
 - **`Portal`** — immutable; carries both a centroid (used for the marker position and the stable `markerId()`) **and** the frame's integer bounding box. `contains()` drives precise break-removal; `overlaps()` drives dedup. Pure domain object — no Bukkit/BlueMap imports.
 - **`PortalClustering`** — collapses the many per-block POI/event hits of one frame into a single `Cluster` (centroid + min/max) via flood fill. `overlaps()` is intentionally **inclusive** (`<=`/`>=`) because portals are 1 block thick (min==max on the thickness axis) — a strict comparison would break same-portal dedup.
-- **`PoiSweeper`** — discovery via the **Paper POI API** (`World.locateAllPoiInRange`). Used for the upfront sweep and per-chunk queries.
-- **`PortalListener`** — the four detection/removal triggers (see below).
-- **`BlueMapBridge`** — `Consumer<BlueMapAPI>`; rebuilds the toggleable marker set from the store and does live add/remove.
-- **`NetherPortalMarkersPlugin`** — wiring, config, the delayed upfront sweep, and coalesced async saves.
-- **`Log`** — INFO/DEBUG split (see Logging).
+- **`PoiSweeper`** — discovery via the **Paper POI API** (`World.locateAllPoiInRange`). Used for the upfront sweep, per-chunk queries, and the full-height `sweepColumn` (manual coordinate sweeps).
+- **`PortalListener`** — the four detection/removal triggers (see below), plus a `WorldLoadEvent` handler that records a world's dimension for linking.
+- **`BlueMapBridge`** — `Consumer<BlueMapAPI>`; rebuilds the toggleable marker set from the store and does live add/remove. Marker appearance is mutable (`updateMarkerConfig` + `refresh()`) so `/bmportals reload` re-applies it live. Builds the popup HTML, including the optional predicted-link section.
+- **`PortalLinker`** — pure (no Bukkit) Overworld↔Nether 8:1 pairing: predicts a portal's counterpart coords and finds the nearest known portal there. Used by `BlueMapBridge` **off-main**, so it takes a caller-supplied `worldName → Dimension` map instead of touching Bukkit.
+- **`PortalsCommand`** — the `/bmportals` admin command (`reload`/`sweep`/`stats`/`purge`) + tab completer; gated by `bmportals.admin`.
+- **`UpdateChecker`** / **`VersionCompare`** — off-main GitHub-Releases update notice; the pure version comparison is split into `VersionCompare` so it's unit-testable without paper-api on the classpath.
+- **`NetherPortalMarkersPlugin`** — wiring, config (+ hot `reloadConfigAndApply`), the delayed upfront sweep, coalesced async saves, the per-world dimension map, bStats `Metrics`, and the update checker.
+- **`Log`** — INFO/DEBUG split (see Logging); `debug` is mutable for reload.
 
 ### Detection model (how portals get found)
 
@@ -59,7 +65,8 @@ Detection is **Paper 26.1+ only** (the POI API has no Spigot/older-Paper fallbac
 - Use `PoiTypes.NETHER_PORTAL` (a ready `PoiType`) — **not** `PoiTypeKeys.NETHER_PORTAL` (a `TypedKey`).
 - `locateAllPoiInRange` returns a `List<PoiSearchResult>`; results use record-style accessors `location()` / `poiType()`. Occupancy is `PoiType.Occupancy.ANY` (an interface constant, not an enum).
 - BlueMap `POIMarker` position is a flowpowered `com.flowpowered.math.vector.Vector3d`, distinct from Bukkit `Location` — convert manually. `POIMarker` has no `color()`.
-- `map.getMarkerSets()` and `MarkerSet.getMarkers()` are live/concurrent maps; mutating them changes the web map. Use `computeIfAbsent` for the marker set.
+- `map.getMarkerSets()` and `MarkerSet.getMarkers()` are live/concurrent maps; mutating them changes the web map. Use `computeIfAbsent` for the marker set. `MarkerSet` has live setters (`setLabel`/`setToggleable`/`setDefaultHidden`) used by `BlueMapBridge.refresh()`.
+- **BlueMap deep-link URL hash** (verified against `BlueMapApp.js` `updatePageAddress`/`loadPageAddress`): exactly **10** colon-separated components — `#<mapId>:<x>:<y>:<z>:<distance>:<rotation>:<angle>:<tilt>:<ortho>:<state>`. The parser rejects any other count, so all 10 must be present; the linker emits `#<mapId>:<x>:<y>:<z>:1000:0:0:0:0:perspective`. The `mapId` comes from `BlueMapMap.getId()` (a world can have several maps; we take the first).
 
 ## Logging
 
@@ -69,4 +76,4 @@ Detection is **Paper 26.1+ only** (the POI API has no Spigot/older-Paper fallbac
 
 - Persisted JSON is versioned by shape, not a version field: new optional fields are boxed (`Integer`) so absent values deserialize to `null` and a migration path in `PortalDto.toPortal()` handles older files. Preserve backward-compatible loading when changing the schema.
 - Reverse-DNS namespace root is `dev.aldis` (the earlier `email.aldis` was wrong and was renamed in v0.2).
-- The README "Roadmap" lists deliberately deferred features (admin commands, per-world filtering, marker tuning) — check it before assuming something is missing by accident.
+- The README "Roadmap" lists deliberately deferred features (background/periodic sweeping → v0.4, per-world filtering, marker tuning) — check it before assuming something is missing by accident. Admin commands, portal linking, bStats + update checker, the JUnit suite, and CI all shipped in v0.3.
