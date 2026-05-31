@@ -1,4 +1,4 @@
-package email.aldis.bluemapportalmarkers;
+package dev.aldis.bluemapportalmarkers;
 
 import io.papermc.paper.entity.poi.PoiSearchResult;
 import io.papermc.paper.entity.poi.PoiType;
@@ -9,7 +9,6 @@ import org.bukkit.World;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Logger;
 
 /**
  * Discovers nether portals using Paper's point-of-interest (POI) API and feeds
@@ -23,11 +22,11 @@ public final class PoiSweeper {
     /** Default radius for the cheap per-chunk query. */
     public static final int CHUNK_QUERY_RADIUS = 16;
 
-    private final Logger logger;
+    private final Log log;
     private final PortalStore store;
 
-    public PoiSweeper(Logger logger, PortalStore store) {
-        this.logger = logger;
+    public PoiSweeper(Log log, PortalStore store) {
+        this.log = log;
         this.store = store;
     }
 
@@ -93,20 +92,22 @@ public final class PoiSweeper {
             blocks.add(new int[] { loc.getBlockX(), loc.getBlockY(), loc.getBlockZ() });
         }
 
-        for (double[] centroid : PortalClustering.cluster(blocks)) {
+        for (PortalClustering.Cluster cluster : PortalClustering.cluster(blocks)) {
             Portal portal = new Portal(
                     world.getUID(),
                     world.getName(),
-                    centroid[0],
-                    centroid[1],
-                    centroid[2]);
+                    cluster.centroid()[0],
+                    cluster.centroid()[1],
+                    cluster.centroid()[2],
+                    cluster.min()[0], cluster.min()[1], cluster.min()[2],
+                    cluster.max()[0], cluster.max()[1], cluster.max()[2]);
             if (store.add(portal)) {
                 added.add(portal);
             }
         }
 
         if (!added.isEmpty()) {
-            logger.fine("POI sweep discovered " + added.size() + " new portal(s) in " + world.getName());
+            log.debug("POI sweep discovered " + added.size() + " new portal(s) in " + world.getName());
         }
         return added;
     }

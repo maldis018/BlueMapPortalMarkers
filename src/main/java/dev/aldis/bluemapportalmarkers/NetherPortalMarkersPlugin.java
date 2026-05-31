@@ -1,4 +1,4 @@
-package email.aldis.bluemapportalmarkers;
+package dev.aldis.bluemapportalmarkers;
 
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import org.bukkit.Location;
@@ -10,8 +10,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Plugin entry point. Wires the {@link PortalStore}, {@link BlueMapBridge},
@@ -23,6 +21,7 @@ public final class NetherPortalMarkersPlugin extends JavaPlugin {
     private PortalStore store;
     private BlueMapBridge bridge;
     private PoiSweeper sweeper;
+    private Log log;
     private String storageFileName;
     private int sweepRadius;
     private volatile boolean savePending;
@@ -41,28 +40,30 @@ public final class NetherPortalMarkersPlugin extends JavaPlugin {
         this.sweepRadius = config.getInt("discovery.sweep-radius", 256);
         boolean scanOnChunkLoad = config.getBoolean("discovery.scan-on-chunk-load", true);
         this.storageFileName = config.getString("storage.file", "portals.json");
+        boolean debug = config.getBoolean("logging.debug", false);
 
-        Logger logger = getLogger();
+        this.log = new Log(getLogger(), debug);
 
         // --- Core components ---
         this.store = new PortalStore();
-        store.load(storageFile(), logger);
+        store.load(storageFile(), log);
 
-        this.bridge = new BlueMapBridge(store, logger, markerLabel, defaultHidden, icon, anchorX, anchorY);
-        this.sweeper = new PoiSweeper(logger, store);
+        this.bridge = new BlueMapBridge(store, log, markerLabel, defaultHidden, icon, anchorX, anchorY);
+        this.sweeper = new PoiSweeper(log, store);
 
         // --- BlueMap registration (consumer reference kept in 'bridge' field) ---
         BlueMapAPI.onEnable(bridge);
 
         // --- Events ---
         getServer().getPluginManager().registerEvents(
-                new PortalListener(this, store, bridge, sweeper, scanOnChunkLoad, PoiSweeper.CHUNK_QUERY_RADIUS),
+                new PortalListener(this, store, bridge, sweeper, scanOnChunkLoad, PoiSweeper.CHUNK_QUERY_RADIUS, log),
                 this);
 
         // --- Upfront sweep (2s delay to let worlds/players settle) ---
         getServer().getScheduler().runTaskLater(this, this::initialSweep, 40L);
 
-        logger.info("BlueMapPortalMarkers enabled (loaded " + store.all().size() + " stored portal(s)).");
+        log.info("BlueMapPortalMarkers enabled (loaded " + store.size() + " stored portal(s)"
+                + (debug ? ", debug logging on" : "") + ").");
     }
 
     @Override
@@ -70,10 +71,12 @@ public final class NetherPortalMarkersPlugin extends JavaPlugin {
         if (bridge != null) {
             BlueMapAPI.unregisterListener(bridge);
         }
-        if (store != null) {
-            store.save(storageFile(), getLogger());
+        if (store != null && log != null) {
+            store.save(storageFile(), log);
         }
-        getLogger().info("BlueMapPortalMarkers disabled.");
+        if (log != null) {
+            log.info("BlueMapPortalMarkers disabled.");
+        }
     }
 
     /** Sweep around each world's spawn and around every online player. */
@@ -97,9 +100,9 @@ public final class NetherPortalMarkersPlugin extends JavaPlugin {
             if (!newPortals.isEmpty()) {
                 requestSave();
             }
-            getLogger().info("Upfront POI sweep added " + newPortals.size() + " new portal(s).");
+            log.info("Upfront POI sweep added " + newPortals.size() + " new portal(s).");
         } catch (RuntimeException ex) {
-            getLogger().log(Level.WARNING, "Upfront POI sweep failed", ex);
+            log.warn("Upfront POI sweep failed", ex);
         }
     }
 
@@ -115,7 +118,7 @@ public final class NetherPortalMarkersPlugin extends JavaPlugin {
         savePending = true;
         getServer().getScheduler().runTaskAsynchronously(this, () -> {
             savePending = false;
-            store.save(storageFile(), getLogger());
+            store.save(storageFile(), log);
         });
     }
 

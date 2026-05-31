@@ -1,4 +1,4 @@
-package email.aldis.bluemapportalmarkers;
+package dev.aldis.bluemapportalmarkers;
 
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import de.bluecolored.bluemap.api.BlueMapMap;
@@ -14,7 +14,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
-import java.util.logging.Logger;
 
 /**
  * Bridges the {@link PortalStore} to BlueMap by maintaining a toggleable marker
@@ -30,7 +29,7 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
     public static final String MARKER_SET_ID = "nether_portals";
 
     private final PortalStore store;
-    private final Logger logger;
+    private final Log log;
     private final String markerSetLabel;
     private final boolean defaultHidden;
     private final String iconAddress;
@@ -38,14 +37,14 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
     private final int anchorY;
 
     public BlueMapBridge(PortalStore store,
-                         Logger logger,
+                         Log log,
                          String markerSetLabel,
                          boolean defaultHidden,
                          String iconAddress,
                          int anchorX,
                          int anchorY) {
         this.store = store;
-        this.logger = logger;
+        this.log = log;
         this.markerSetLabel = markerSetLabel;
         this.defaultHidden = defaultHidden;
         this.iconAddress = iconAddress == null ? "" : iconAddress;
@@ -79,7 +78,8 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
         // Add/replace each portal's marker across every map of its world (put is
         // idempotent, so a portal whose world resolves to multiple maps is fine).
         for (Portal portal : snapshot) {
-            BlueMapWorld bmWorld = resolveWorld(api, portal);
+            // accept() runs off the main thread — use the thread-safe name lookup only.
+            BlueMapWorld bmWorld = resolveWorldByName(api, portal);
             if (bmWorld == null) {
                 continue;
             }
@@ -88,7 +88,7 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
                 getOrCreateMarkerSet(map).getMarkers().put(portal.markerId(), marker);
             }
         }
-        logger.fine("BlueMap marker rebuild complete (" + snapshot.size() + " portal(s)).");
+        log.debug("BlueMap marker rebuild complete (" + snapshot.size() + " portal(s)).");
     }
 
     /**
@@ -163,21 +163,28 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
     }
 
     /**
-     * Resolve the {@link BlueMapWorld} for a portal. Prefers the BlueMap-side,
-     * thread-safe name lookup first; only falls back to the Bukkit world lookup
-     * (by UUID) if the name lookup is empty. Returns {@code null} if BlueMap
-     * doesn't know the world.
-     *
-     * <p>{@link #accept} can run off the main server thread, where calling into
-     * Bukkit is unsafe, so the name-based BlueMap lookup is preferred.</p>
+     * Thread-safe resolution of a portal's {@link BlueMapWorld} by world name.
+     * Safe to call from any thread (including {@link #accept}, which runs off the
+     * main server thread). Returns {@code null} if BlueMap doesn't know the world.
      */
-    private BlueMapWorld resolveWorld(BlueMapAPI api, Portal p) {
+    private BlueMapWorld resolveWorldByName(BlueMapAPI api, Portal p) {
         String name = p.worldName();
         if (name != null && !name.isEmpty()) {
-            Optional<BlueMapWorld> byName = api.getWorld(name);
-            if (byName.isPresent()) {
-                return byName.get();
-            }
+            return api.getWorld(name).orElse(null);
+        }
+        return null;
+    }
+
+    /**
+     * Resolve a portal's {@link BlueMapWorld}, preferring the thread-safe name
+     * lookup and falling back to a Bukkit UUID lookup. MUST be called on the main
+     * server thread (the Bukkit fallback is main-thread-only), so it's used only
+     * by {@link #addPortal}/{@link #removePortal}, never by {@link #accept}.
+     */
+    private BlueMapWorld resolveWorld(BlueMapAPI api, Portal p) {
+        BlueMapWorld byName = resolveWorldByName(api, p);
+        if (byName != null) {
+            return byName;
         }
         if (p.worldId() != null) {
             World bukkitWorld = Bukkit.getWorld(p.worldId());

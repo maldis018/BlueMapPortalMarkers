@@ -1,4 +1,4 @@
-package email.aldis.bluemapportalmarkers;
+package dev.aldis.bluemapportalmarkers;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,8 +9,9 @@ import java.util.List;
  *
  * <p>Block positions are flood-filled into connected groups: two positions join
  * the same cluster when their Euclidean distance is {@code <= ADJACENCY}
- * (covering orthogonal and diagonal adjacency). Each group's centroid is
- * returned. Pure Java — operates on primitive coordinates only.</p>
+ * (covering orthogonal and diagonal adjacency). Each group yields a
+ * {@link Cluster} carrying both the centroid and the axis-aligned bounding box
+ * of its blocks. Pure Java — operates on primitive coordinates only.</p>
  */
 public final class PortalClustering {
 
@@ -24,13 +25,20 @@ public final class PortalClustering {
     }
 
     /**
-     * Cluster the given block positions ({@code int[]{x,y,z}}) into connected
-     * groups and return each group's centroid as {@code double[]{cx,cy,cz}}.
+     * One clustered portal frame: its centroid ({@code double[]{cx,cy,cz}}) and
+     * the integer bounding box of its blocks.
      */
-    public static List<double[]> cluster(List<int[]> positions) {
-        List<double[]> centroids = new ArrayList<>();
+    public record Cluster(double[] centroid, int[] min, int[] max) {
+    }
+
+    /**
+     * Cluster the given block positions ({@code int[]{x,y,z}}) into connected
+     * groups and return one {@link Cluster} per group.
+     */
+    public static List<Cluster> cluster(List<int[]> positions) {
+        List<Cluster> clusters = new ArrayList<>();
         if (positions == null || positions.isEmpty()) {
-            return centroids;
+            return clusters;
         }
 
         int n = positions.size();
@@ -50,6 +58,12 @@ public final class PortalClustering {
             long sumY = 0;
             long sumZ = 0;
             int count = 0;
+            int minX = Integer.MAX_VALUE;
+            int minY = Integer.MAX_VALUE;
+            int minZ = Integer.MAX_VALUE;
+            int maxX = Integer.MIN_VALUE;
+            int maxY = Integer.MIN_VALUE;
+            int maxZ = Integer.MIN_VALUE;
 
             while (!stack.isEmpty()) {
                 int cur = stack.remove(stack.size() - 1);
@@ -58,6 +72,12 @@ public final class PortalClustering {
                 sumY += cp[1];
                 sumZ += cp[2];
                 count++;
+                minX = Math.min(minX, cp[0]);
+                minY = Math.min(minY, cp[1]);
+                minZ = Math.min(minZ, cp[2]);
+                maxX = Math.max(maxX, cp[0]);
+                maxY = Math.max(maxY, cp[1]);
+                maxZ = Math.max(maxZ, cp[2]);
 
                 for (int j = 0; j < n; j++) {
                     if (visited[j]) {
@@ -74,13 +94,12 @@ public final class PortalClustering {
                 }
             }
 
-            centroids.add(new double[] {
-                    (double) sumX / count,
-                    (double) sumY / count,
-                    (double) sumZ / count
-            });
+            clusters.add(new Cluster(
+                    new double[] { (double) sumX / count, (double) sumY / count, (double) sumZ / count },
+                    new int[] { minX, minY, minZ },
+                    new int[] { maxX, maxY, maxZ }));
         }
 
-        return centroids;
+        return clusters;
     }
 }

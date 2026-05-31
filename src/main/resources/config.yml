@@ -22,3 +22,9 @@ discovery:
 storage:
   # File (under the plugin data folder) where discovered portals are persisted.
   file: "portals.json"
+
+logging:
+  # When true, verbose diagnostics (per-chunk discovery, marker rebuilds, sweep
+  # counts) are printed to the console with a [DEBUG] prefix. Normal events
+  # (portal added/removed, startup sweep total) always log at INFO regardless.
+  debug: false

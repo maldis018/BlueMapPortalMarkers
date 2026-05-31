@@ -2,8 +2,8 @@ plugins {
     java
 }
 
-group = "email.aldis"
-version = "0.1.0-SNAPSHOT"
+group = "dev.aldis"
+version = "0.2.0-SNAPSHOT"
 
 // Compile to Java 25 bytecode: paper-api 26.1.x publishes Gradle metadata
 // requiring a JVM runtime of 25+, so the plugin must target 25 as well.
