@@ -2,15 +2,31 @@ name: Build
 
 on:
   push:
-    branches: ["**"]
-    tags: ["v*"]
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".gitignore"
   pull_request:
+    # Default types plus ready_for_review, so un-drafting a PR triggers a build.
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".gitignore"
 
-permissions:
-  contents: write # needed by the release job to attach the jar to a Release
+# One in-flight run per ref; cancel superseded runs on PR branches (but let
+# main builds finish so the default branch always has a complete result).
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
+    # main pushes always run; PR builds are skipped while the PR is a draft.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -35,30 +51,3 @@ jobs:
           name: BlueMapPortalMarkers-jar
           path: build/libs/*.jar
           if-no-files-found: error
-
-  release:
-    # Only on a version tag; reuses the same build then publishes the jar.
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up JDK 25
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "25"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-
-      - name: Build release jar
-        run: ./gradlew build --no-daemon
-
-      - name: Publish release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: build/libs/BlueMapPortalMarkers-*.jar
-          fail_on_unmatched_files: true
-          generate_release_notes: true
