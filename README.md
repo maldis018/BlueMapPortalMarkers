@@ -121,3 +121,11 @@ Planned for a later release:
 - Background/periodic sweeping with per-tick work budgeting (deferred to v0.4 — needs live performance testing).
 - Per-world include/exclude filtering.
 - Marker tuning: view min/max distance, sorting, and customizable label/detail templates.
+
+## License
+
+Copyright © 2026 Max Aldis.
+
+BlueMapPortalMarkers is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License v3.0** as published by the Free Software Foundation. See [LICENSE](LICENSE) for the full text.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
