@@ -15,7 +15,7 @@ Portals reach the map through several complementary mechanisms, all feeding a si
 
 **Clustering & dedup.** A POI query returns one result per portal *block*, so adjacent blocks are flood-fill clustered into a single portal (centroid + bounding box). Re-detections of the same portal are deduplicated by bounding-box overlap (with a small centroid-distance safety net), so a portal yields exactly one marker no matter how many times or ways it's found.
 
-Each portal is rendered as a clickable **POI marker** at the frame centroid, with an HTML detail popup showing the world and coordinates. When **portal linking** is enabled, the popup also shows the predicted Overworld↔Nether counterpart (vanilla 8:1 rule) and, when a portal is already known near that spot, a clickable deep-link that flies the BlueMap viewer to it.
+Each portal is rendered as a clickable **POI marker** at the frame centroid, with an HTML detail popup showing the world and coordinates. When **portal linking** is enabled, the popup also shows the predicted Overworld↔Nether counterpart (vanilla 8:1 rule) and, when a portal is already known near that spot, a deep-link that flies the BlueMap viewer to it. Making that deep-link *clickable* needs a one-time BlueMap web-app tweak — see [Enabling clickable deep-links](#enabling-clickable-deep-links-bluemap-web-setup).
 
 ## Requirements
 
@@ -51,6 +51,38 @@ Each portal is rendered as a clickable **POI marker** at the frame centroid, wit
 | `update-check.enabled` | `true` | On enable, check GitHub Releases for a newer version and log one INFO line if found (off-main, fails silently when offline). |
 
 Most settings can be re-applied at runtime with `/bmportals reload` (see Commands). `storage.file` is the exception — changing it still needs a restart.
+
+## Enabling clickable deep-links (BlueMap web setup)
+
+> Only needed if `linking.enabled` is on **and** you want the **"Go to linked portal"** deep-link in popups to be clickable. The rest of the plugin (markers, popups, predicted-link text) works without this.
+
+BlueMap doesn't make links inside marker-detail HTML usable out of the box — two things get in the way, so a plain link in a popup is unclickable:
+
+1. The popup's container inherits `pointer-events: none` from BlueMap's renderer, so the link never receives clicks.
+2. Even with that fixed, BlueMap's map controls cancel the link's default navigation, and the popup's "click-away" listener throws after the deep-link switches maps.
+
+This repo ships two small web-app addons that fix both ([`webapp/my-custom-style.css`](webapp/my-custom-style.css) and [`webapp/my-custom-script.js`](webapp/my-custom-script.js)). To install:
+
+1. **Copy both files** into your BlueMap **webroot** (the `webroot` set in `plugins/BlueMap/webapp.conf`, default `bluemap/web/`):
+   ```
+   bluemap/web/my-custom-style.css
+   bluemap/web/my-custom-script.js
+   ```
+2. **Register them** in `plugins/BlueMap/webapp.conf`. The `?v=1` is a cache-buster (see the note below):
+   ```
+   scripts: [
+     "my-custom-script.js?v=1"
+   ]
+
+   styles: [
+     "my-custom-style.css?v=1"
+   ]
+   ```
+3. **Apply:** run `/bluemap reload light` in the server console, then **hard-refresh** the map in your browser (Ctrl/Cmd+Shift+R).
+
+You should now be able to click a portal marker to open its popup, then click **"Go to linked portal"** to fly to the counterpart — while clicking the icon itself still just opens the popup.
+
+> **Caching gotcha.** BlueMap injects these files via `<link>`/`<script>` tags, and most setups (especially behind a CDN/reverse proxy) cache them aggressively. **Every time you edit either file, bump the version query** (`?v=1` → `?v=2`, …) in `webapp.conf` and reload, or purge your proxy/CDN cache — otherwise the old copy keeps being served.
 
 ## Commands
 
