@@ -11,6 +11,17 @@ markers:
   # Icon anchor in pixels (where the icon "points"). Only used if icon is set.
   icon-anchor-x: 25
   icon-anchor-y: 45
+  # Minimum camera distance (metres) at which this portal is visible on the map.
+  # 0 = always visible. Useful to hide markers at very close zoom levels.
+  min-distance: 0
+  # Maximum camera distance (metres) at which this portal is visible on the map.
+  # 0 = always visible. Useful to declutter the map at high zoom levels.
+  max-distance: 0
+  # Sort order for the marker in the BlueMap layer list (lower = higher in list).
+  sorting: 0
+  # Label template for each portal marker. Supports: {world}, {x}, {y}, {z}.
+  # Leave empty for the default label "Nether Portal".
+  label-template: ""
 
 discovery:
   # Radius (in blocks) of the upfront POI sweep performed around spawn and
@@ -18,6 +29,22 @@ discovery:
   sweep-radius: 256
   # Also query POIs when a chunk loads (cheap; covers areas players roam into).
   scan-on-chunk-load: true
+  # Per-world include/exclude filtering. Useful to skip creative or minigame worlds.
+  worlds:
+    # "blacklist" tracks all worlds except those listed; "whitelist" tracks only
+    # the worlds listed.
+    mode: blacklist
+    list: []
+  # Periodic background sweep to cover areas players have roamed into since last
+  # startup. Opt-in: enable only after confirming acceptable performance on your
+  # server. Requires restart or /bmportals reload after changing.
+  background-sweep:
+    enabled: false
+    # How often to sweep (seconds). Minimum 30.
+    interval-seconds: 300
+    # Maximum number of online player positions swept per pass. Players are cycled
+    # in rotation so all are covered over successive passes. Spawn is always swept.
+    max-players-per-pass: 3
 
 linking:
   # Add a "predicted link" section to each portal's popup, pairing it with its

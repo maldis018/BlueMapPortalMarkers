@@ -5,9 +5,33 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-06-02
 
-_Nothing yet — `main` is on `0.4.0-SNAPSHOT`._
+### Added
+
+- **Per-world filtering** (`discovery.worlds.mode` = `blacklist`|`whitelist`,
+  `discovery.worlds.list`): restrict portal detection to (or exclude) specific
+  worlds — useful for skipping creative/minigame worlds. Gates all four
+  detection paths and the startup sweep; defaults (`blacklist` + empty list)
+  track every world, so existing setups are unaffected. Applied live by
+  `/bmportals reload`. Existing portals in a newly-filtered world stay until
+  `/bmportals purge <world>`.
+- **Marker presentation tuning**: `markers.min-distance` / `markers.max-distance`
+  (camera-distance visibility range; `0` = always visible), `markers.sorting`
+  (layer-list order), and `markers.label-template` (per-marker label with
+  `{world}`/`{x}`/`{y}`/`{z}` placeholders; empty = default `"Nether Portal"`).
+  All applied live by `/bmportals reload`.
+- **Background sweeping** (`discovery.background-sweep.*`): an opt-in repeating
+  task that re-sweeps world spawns and a rotating window of online players, so
+  portals in areas players roam into are picked up without a restart. Disabled
+  by default; `interval-seconds` (min 30) and `max-players-per-pass` are
+  configurable, and the schedule is re-applied live by `/bmportals reload`.
+- BlueMap web-app addons (`webapp/my-custom-style.css`, `webapp/my-custom-script.js`)
+  and a README section that make the in-popup "Go to linked portal" deep-link
+  actually clickable — BlueMap otherwise leaves links in marker-detail HTML
+  unclickable (inherited `pointer-events: none`) and suppresses their
+  navigation. The script also works around a BlueMap bug where the popup's
+  "click-away" listener throws after a deep-link switches maps.
 
 ## [0.3.0] - 2026-05-31
 
@@ -69,7 +93,8 @@ metrics, and a real CI/test pipeline.
   kept in sync as portals are lit, discovered, and broken, and persisted across
   restarts.
 
-[Unreleased]: https://github.com/maldis018/BlueMapPortalMarkers/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/maldis018/BlueMapPortalMarkers/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/maldis018/BlueMapPortalMarkers/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/maldis018/BlueMapPortalMarkers/releases/tag/v0.3.0
 [0.2.0]: https://github.com/maldis018/BlueMapPortalMarkers/commit/5229b94
 [0.1.0]: https://github.com/maldis018/BlueMapPortalMarkers/commit/6b6c481

@@ -1,0 +1,21 @@
+/*
+ * BlueMapPortalMarkers — BlueMap web-app style addon
+ * ---------------------------------------------------
+ * Makes the "Go to linked portal" deep-link inside a portal popup clickable.
+ *
+ * BlueMap renders marker detail HTML inside an element whose ancestor has
+ * `pointer-events: none` (set by its CSS2D renderer), which is inherited by the
+ * link — so the link can't be clicked. We re-enable it on the <a> itself.
+ *
+ * It is scoped to the highlighted (popup-open) state on purpose: when the popup
+ * is closed it is only `opacity: 0`, not removed, and an always-clickable link
+ * would sit invisibly over the marker icon and hijack clicks meant to open the
+ * popup. `.bm-marker-popup` is included for older/other BlueMap popup variants.
+ *
+ * Install: copy to your BlueMap webroot (e.g. bluemap/web/) and register it in
+ * plugins/BlueMap/webapp.conf under `styles:`. See the project README.
+ */
+#map-container .bm-marker-html.bm-marker-highlight .bm-marker-poi-label a,
+#map-container .bm-marker-popup a {
+    pointer-events: auto;
+}

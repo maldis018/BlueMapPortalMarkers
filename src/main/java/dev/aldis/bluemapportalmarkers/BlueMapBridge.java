@@ -41,6 +41,10 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
     // thread-safe map; we never mutate it.
     private volatile PortalLinker linker;
     private final Map<String, PortalLinker.Dimension> dimensions;
+    private volatile double minDistance;
+    private volatile double maxDistance;
+    private volatile int sorting;
+    private volatile String labelTemplate;
 
     public BlueMapBridge(PortalStore store,
                          Log log,
@@ -49,6 +53,10 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
                          String iconAddress,
                          int anchorX,
                          int anchorY,
+                         double minDistance,
+                         double maxDistance,
+                         int sorting,
+                         String labelTemplate,
                          PortalLinker linker,
                          Map<String, PortalLinker.Dimension> dimensions) {
         this.store = store;
@@ -58,6 +66,10 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
         this.iconAddress = iconAddress == null ? "" : iconAddress;
         this.anchorX = anchorX;
         this.anchorY = anchorY;
+        this.minDistance = minDistance;
+        this.maxDistance = maxDistance;
+        this.sorting = sorting;
+        this.labelTemplate = labelTemplate == null ? "" : labelTemplate;
         this.linker = linker;
         this.dimensions = dimensions;
     }
@@ -154,12 +166,18 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
      * Call {@link #refresh()} afterwards to push the changes onto the live map.
      */
     public void updateMarkerConfig(String markerSetLabel, boolean defaultHidden,
-                                   String iconAddress, int anchorX, int anchorY) {
+                                   String iconAddress, int anchorX, int anchorY,
+                                   double minDistance, double maxDistance,
+                                   int sorting, String labelTemplate) {
         this.markerSetLabel = markerSetLabel;
         this.defaultHidden = defaultHidden;
         this.iconAddress = iconAddress == null ? "" : iconAddress;
         this.anchorX = anchorX;
         this.anchorY = anchorY;
+        this.minDistance = minDistance;
+        this.maxDistance = maxDistance;
+        this.sorting = sorting;
+        this.labelTemplate = labelTemplate == null ? "" : labelTemplate;
     }
 
     /**
@@ -197,18 +215,26 @@ public final class BlueMapBridge implements Consumer<BlueMapAPI> {
 
     /** Build the POI marker for a portal (icon if configured, else default). */
     private POIMarker buildMarker(BlueMapAPI api, Portal p, Collection<Portal> candidates) {
+        String label = MarkerLabel.format(labelTemplate, p.worldName(), p.x(), p.y(), p.z());
         // Escape user-influenced text (world name, coords) before embedding in HTML.
         String coords = htmlEscape(Math.round(p.x()) + ", " + Math.round(p.y()) + ", " + Math.round(p.z()));
         StringBuilder detail = new StringBuilder()
-                .append("<b>Nether Portal</b><br>")
+                .append("<b>").append(htmlEscape(label)).append("</b><br>")
                 .append(htmlEscape(p.worldName()))
                 .append(" @ ")
                 .append(coords);
         appendLinkSection(detail, api, p, candidates);
         POIMarker.Builder b = POIMarker.builder()
-                .label("Nether Portal")
+                .label(label)
                 .position(p.x(), p.y() + 1, p.z())
-                .detail(detail.toString());
+                .detail(detail.toString())
+                .sorting(sorting);
+        if (minDistance > 0) {
+            b.minDistance(minDistance);
+        }
+        if (maxDistance > 0) {
+            b.maxDistance(maxDistance);
+        }
         if (!iconAddress.isEmpty()) {
             b.icon(iconAddress, anchorX, anchorY);
         } else {

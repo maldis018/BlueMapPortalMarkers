@@ -36,6 +36,7 @@ public final class PortalListener implements Listener {
     private final BlueMapBridge bridge;
     private final PoiSweeper sweeper;
     private volatile boolean scanOnChunkLoad;
+    private volatile WorldFilter worldFilter;
     private final int chunkQueryRadius;
     private final Log log;
 
@@ -52,6 +53,7 @@ public final class PortalListener implements Listener {
                           BlueMapBridge bridge,
                           PoiSweeper sweeper,
                           boolean scanOnChunkLoad,
+                          WorldFilter worldFilter,
                           int chunkQueryRadius,
                           Log log) {
         this.plugin = plugin;
@@ -59,6 +61,7 @@ public final class PortalListener implements Listener {
         this.bridge = bridge;
         this.sweeper = sweeper;
         this.scanOnChunkLoad = scanOnChunkLoad;
+        this.worldFilter = worldFilter;
         this.chunkQueryRadius = chunkQueryRadius;
         this.log = log;
     }
@@ -76,6 +79,11 @@ public final class PortalListener implements Listener {
         this.scanOnChunkLoad = scanOnChunkLoad;
     }
 
+    /** Replace the world filter at runtime ({@code /bmportals reload}). */
+    public void setWorldFilter(WorldFilter worldFilter) {
+        this.worldFilter = worldFilter;
+    }
+
     /**
      * Register a newly lit / paired portal. Only acts on {@code FIRE} and
      * {@code NETHER_PAIR} reasons; API-created portals get picked up by the
@@ -90,6 +98,9 @@ public final class PortalListener implements Listener {
         }
 
         World world = e.getWorld();
+        if (!worldFilter.allows(world.getName())) {
+            return;
+        }
         List<int[]> blocks = new ArrayList<>();
         for (BlockState bs : e.getBlocks()) {
             if (bs.getType() == Material.NETHER_PORTAL) {
@@ -133,6 +144,9 @@ public final class PortalListener implements Listener {
         if (block.getType() != Material.NETHER_PORTAL) {
             return;
         }
+        if (!worldFilter.allows(block.getWorld().getName())) {
+            return;
+        }
         Portal removed = store.removeContaining(
                 block.getWorld().getUID(),
                 block.getX(),
@@ -155,6 +169,9 @@ public final class PortalListener implements Listener {
             return;
         }
         World world = e.getChunk().getWorld();
+        if (!worldFilter.allows(world.getName())) {
+            return;
+        }
         long key = packChunkKey(e.getChunk().getX(), e.getChunk().getZ());
         Set<Long> worldChunks = queriedChunks.computeIfAbsent(world.getUID(), id -> new HashSet<>());
         if (!worldChunks.add(key)) {

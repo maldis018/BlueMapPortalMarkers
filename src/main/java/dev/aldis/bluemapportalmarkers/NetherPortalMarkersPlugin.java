@@ -8,6 +8,7 @@ import org.bukkit.World;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -36,6 +37,9 @@ public final class NetherPortalMarkersPlugin extends JavaPlugin {
     private int sweepRadius;
     private volatile boolean savePending;
     private final Map<String, PortalLinker.Dimension> dimensions = new ConcurrentHashMap<>();
+    private WorldFilter worldFilter;
+    private BukkitTask backgroundSweepTask;
+    private int nextPlayerIdx;
 
     @Override
     public void onEnable() {
@@ -48,8 +52,13 @@ public final class NetherPortalMarkersPlugin extends JavaPlugin {
         String icon = config.getString("markers.icon", "");
         int anchorX = config.getInt("markers.icon-anchor-x", 25);
         int anchorY = config.getInt("markers.icon-anchor-y", 45);
+        double minDistance = config.getDouble("markers.min-distance", 0);
+        double maxDistance = config.getDouble("markers.max-distance", 0);
+        int sorting = config.getInt("markers.sorting", 0);
+        String labelTemplate = config.getString("markers.label-template", "");
         this.sweepRadius = config.getInt("discovery.sweep-radius", 256);
         boolean scanOnChunkLoad = config.getBoolean("discovery.scan-on-chunk-load", true);
+        this.worldFilter = buildWorldFilter(config);
         this.storageFileName = config.getString("storage.file", "portals.json");
         boolean debug = config.getBoolean("logging.debug", false);
         boolean linkingEnabled = config.getBoolean("linking.enabled", true);
@@ -67,7 +76,7 @@ public final class NetherPortalMarkersPlugin extends JavaPlugin {
         PortalLinker linker = linkingEnabled ? new PortalLinker(linkTolerance) : null;
 
         this.bridge = new BlueMapBridge(store, log, markerLabel, defaultHidden, icon, anchorX, anchorY,
-                linker, dimensions);
+                minDistance, maxDistance, sorting, labelTemplate, linker, dimensions);
         this.sweeper = new PoiSweeper(log, store);
 
         // --- BlueMap registration (consumer reference kept in 'bridge' field) ---
@@ -75,7 +84,7 @@ public final class NetherPortalMarkersPlugin extends JavaPlugin {
 
         // --- Events ---
         this.listener = new PortalListener(this, store, bridge, sweeper,
-                scanOnChunkLoad, PoiSweeper.CHUNK_QUERY_RADIUS, log);
+                scanOnChunkLoad, worldFilter, PoiSweeper.CHUNK_QUERY_RADIUS, log);
         getServer().getPluginManager().registerEvents(listener, this);
 
         // --- Commands ---
@@ -97,12 +106,18 @@ public final class NetherPortalMarkersPlugin extends JavaPlugin {
         // --- Upfront sweep (2s delay to let worlds/players settle) ---
         getServer().getScheduler().runTaskLater(this, this::initialSweep, 40L);
 
+        // --- Background sweep (opt-in) ---
+        rescheduleBackgroundSweep(config);
+
         log.info("BlueMapPortalMarkers enabled (loaded " + store.size() + " stored portal(s)"
                 + (debug ? ", debug logging on" : "") + ").");
     }
 
     @Override
     public void onDisable() {
+        if (backgroundSweepTask != null) {
+            backgroundSweepTask.cancel();
+        }
         if (bridge != null) {
             BlueMapAPI.unregisterListener(bridge);
         }
@@ -132,12 +147,15 @@ public final class NetherPortalMarkersPlugin extends JavaPlugin {
     public List<Portal> defaultSweep(int radius) {
         List<Portal> newPortals = new ArrayList<>();
         for (World world : getServer().getWorlds()) {
+            if (!worldFilter.allows(world.getName())) {
+                continue;
+            }
             newPortals.addAll(sweeper.sweep(world, world.getSpawnLocation(), radius));
         }
         for (Player player : getServer().getOnlinePlayers()) {
             Location loc = player.getLocation();
             World world = loc.getWorld();
-            if (world != null) {
+            if (world != null && worldFilter.allows(world.getName())) {
                 newPortals.addAll(sweeper.sweep(world, loc, radius));
             }
         }
@@ -184,7 +202,12 @@ public final class NetherPortalMarkersPlugin extends JavaPlugin {
         String icon = config.getString("markers.icon", "");
         int anchorX = config.getInt("markers.icon-anchor-x", 25);
         int anchorY = config.getInt("markers.icon-anchor-y", 45);
-        bridge.updateMarkerConfig(markerLabel, defaultHidden, icon, anchorX, anchorY);
+        double minDistance = config.getDouble("markers.min-distance", 0);
+        double maxDistance = config.getDouble("markers.max-distance", 0);
+        int sorting = config.getInt("markers.sorting", 0);
+        String labelTemplate = config.getString("markers.label-template", "");
+        bridge.updateMarkerConfig(markerLabel, defaultHidden, icon, anchorX, anchorY,
+                minDistance, maxDistance, sorting, labelTemplate);
         report.add("markers.* applied");
 
         this.sweepRadius = config.getInt("discovery.sweep-radius", 256);
@@ -194,6 +217,14 @@ public final class NetherPortalMarkersPlugin extends JavaPlugin {
         listener.setScanOnChunkLoad(scanOnChunkLoad);
         report.add("discovery.scan-on-chunk-load = " + scanOnChunkLoad
                 + " (already-loaded chunks are not retroactively scanned)");
+
+        this.worldFilter = buildWorldFilter(config);
+        listener.setWorldFilter(worldFilter);
+        report.add("discovery.worlds." + worldFilter.mode().name().toLowerCase() + " applied");
+
+        rescheduleBackgroundSweep(config);
+        boolean bgEnabled = config.getBoolean("discovery.background-sweep.enabled", false);
+        report.add("discovery.background-sweep.enabled = " + bgEnabled);
 
         boolean debug = config.getBoolean("logging.debug", false);
         log.setDebug(debug);
@@ -268,6 +299,65 @@ public final class NetherPortalMarkersPlugin extends JavaPlugin {
             savePending = false;
             store.save(storageFile(), log);
         });
+    }
+
+    private static WorldFilter buildWorldFilter(FileConfiguration config) {
+        String modeStr = config.getString("discovery.worlds.mode", "blacklist").toUpperCase();
+        WorldFilter.Mode mode;
+        try {
+            mode = WorldFilter.Mode.valueOf(modeStr);
+        } catch (IllegalArgumentException e) {
+            mode = WorldFilter.Mode.BLACKLIST;
+        }
+        List<String> list = config.getStringList("discovery.worlds.list");
+        return new WorldFilter(mode, list);
+    }
+
+    private void rescheduleBackgroundSweep(FileConfiguration config) {
+        if (backgroundSweepTask != null) {
+            backgroundSweepTask.cancel();
+            backgroundSweepTask = null;
+        }
+        if (!config.getBoolean("discovery.background-sweep.enabled", false)) {
+            return;
+        }
+        int intervalSeconds = Math.max(30, config.getInt("discovery.background-sweep.interval-seconds", 300));
+        long intervalTicks = intervalSeconds * 20L;
+        int maxPlayersPerPass = Math.max(1, config.getInt("discovery.background-sweep.max-players-per-pass", 3));
+        backgroundSweepTask = getServer().getScheduler().runTaskTimer(this,
+                () -> backgroundSweep(maxPlayersPerPass), intervalTicks, intervalTicks);
+        log.info("Background sweep scheduled every " + intervalSeconds + "s (max " + maxPlayersPerPass + " player(s)/pass).");
+    }
+
+    private void backgroundSweep(int maxPlayersPerPass) {
+        List<Portal> newPortals = new ArrayList<>();
+        // Always sweep spawn per world (cheap, ensures coverage even with no players).
+        for (World world : getServer().getWorlds()) {
+            if (!worldFilter.allows(world.getName())) {
+                continue;
+            }
+            newPortals.addAll(sweeper.sweep(world, world.getSpawnLocation(), sweepRadius));
+        }
+        // Rotating window over online players so all are covered across passes.
+        List<? extends Player> online = getServer().getOnlinePlayers().stream().toList();
+        if (!online.isEmpty()) {
+            int count = Math.min(maxPlayersPerPass, online.size());
+            for (int i = 0; i < count; i++) {
+                Player player = online.get(nextPlayerIdx % online.size());
+                nextPlayerIdx++;
+                Location loc = player.getLocation();
+                World world = loc.getWorld();
+                if (world != null && worldFilter.allows(world.getName())) {
+                    newPortals.addAll(sweeper.sweep(world, loc, sweepRadius));
+                }
+            }
+        }
+        if (!newPortals.isEmpty()) {
+            addAndSave(newPortals);
+            log.debug("Background sweep added " + newPortals.size() + " new portal(s).");
+        } else {
+            log.debug("Background sweep complete — no new portals.");
+        }
     }
 
     private File storageFile() {
