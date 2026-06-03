@@ -93,6 +93,8 @@ Detection is **Paper 26.1+ only** (the POI API has no Spigot/older-Paper fallbac
 
 **Release notes.** `release.yml` uses `generate_release_notes: true`, so a fresh tag auto-generates notes from merged PRs — this will **not** match a curated `CHANGELOG.md` section. For curated notes, either `gh release edit <tag> --notes …` after publishing, or switch the action to `body_path:`.
 
+**Release-note style:** a one-line summary of the release's theme, then sections grouped by *user-facing impact* with emoji headings — `### ✨ Added`, `### 🛠️ Changed`, `### 🧰 Internal / Developer`, `### 📋 Requirements`, `### ⚠️ Notes`. Each bullet leads with the feature/command in bold and explains what it does for the user (not which PR introduced it). **Avoid** the raw auto-generated `## What's Changed` list of PR titles (`chore: …`, `ci: …`, `docs: …`), which buries the actual features and exposes internal churn. Every release should be curated to this shape after publishing (`gh release edit <tag> --notes-file …`) — the curated `CHANGELOG.md` section is the natural source. Going forward, prefer fixing this at the source by switching `release.yml` to `body_path:` (pointing at the curated changelog excerpt) instead of relying on `generate_release_notes`.
+
 **Changelog.** `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/) (Added/Changed/Fixed/Internal). Add entries under `## [Unreleased]` as you work; promote them to a versioned heading at release time (step 2 above).
 
 **CI workflows** (`.github/workflows/`):
