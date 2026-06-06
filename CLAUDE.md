@@ -88,17 +88,22 @@ Detection is **Paper 26.1+ only** (the POI API has no Spigot/older-Paper fallbac
 1. PR: bump `build.gradle.kts` `0.X.0-SNAPSHOT` → `0.X.0` (drop `-SNAPSHOT`); merge to `main`.
 2. Update `CHANGELOG.md`: rename `## [Unreleased]` to `## [X.Y.Z] - <date>` and refresh the compare/tag links at the bottom (can ride along in the same PR).
 3. Tag the merge commit on `main`: `git tag -a vX.Y.Z -m vX.Y.Z && git push Origin vX.Y.Z`. **The remote is `Origin` (capital O).**
-4. `release.yml` (trigger: tag `v*`) runs `./gradlew build` (compile + test + `shadowJar`) and publishes a GitHub Release with the jar attached.
+4. `release.yml` (trigger: tag `v*`) runs `./gradlew build` (compile + test + `shadowJar`), publishes a GitHub Release with the jar attached, and then publishes the same jar to the **plugin marketplaces** (see below).
 5. Follow-up PR: bump `main` to the next `0.(X+1).0-SNAPSHOT`.
 
 **Release notes.** `release.yml` uses `generate_release_notes: true`, so a fresh tag auto-generates notes from merged PRs — this will **not** match a curated `CHANGELOG.md` section. For curated notes, either `gh release edit <tag> --notes …` after publishing, or switch the action to `body_path:`.
 
 **Release-note style:** a one-line summary of the release's theme, then sections grouped by *user-facing impact* with emoji headings — `### ✨ Added`, `### 🛠️ Changed`, `### 🧰 Internal / Developer`, `### 📋 Requirements`, `### ⚠️ Notes`. Each bullet leads with the feature/command in bold and explains what it does for the user (not which PR introduced it). **Avoid** the raw auto-generated `## What's Changed` list of PR titles (`chore: …`, `ci: …`, `docs: …`), which buries the actual features and exposes internal churn. Every release should be curated to this shape after publishing (`gh release edit <tag> --notes-file …`) — the curated `CHANGELOG.md` section is the natural source. Going forward, prefer fixing this at the source by switching `release.yml` to `body_path:` (pointing at the curated changelog excerpt) instead of relying on `generate_release_notes`.
 
+**Marketplace publishing.** On every `v*` tag, `release.yml` also pushes the jar to three plugin marketplaces, *after* the GitHub Release step (all reuse the already-built jar):
+- **Modrinth + CurseForge** — one `Kira-NT/mc-publish` step (project `bluemapportalmarkers` on Modrinth; CurseForge via `vars.CURSEFORGE_ID`). Loaders `paper`/`purpur`; `game-versions: 26.1.2` (Minecraft's new `year.drop` scheme — bump as new 26.1.x patches ship, only to versions each platform's registry knows).
+- **Hangar** (PaperMC) — a separate `milkdrinkers/Hangar-Publish` step (mc-publish has no Hangar support). Hangar has **no Purpur platform**, so it publishes under the `PAPER` platform only.
+- Each step is gated `if:` on its token env (`MODRINTH_TOKEN` / `CURSEFORGE_TOKEN` / `HANGAR_TOKEN`, mapped from secrets at the job level) being non-empty, so a release stays **green** for any marketplace not yet configured — it simply skips. Required setup before a marketplace goes live: create the project there, add the API-token secret (and for CurseForge the numeric `CURSEFORGE_ID` repo **variable**). Both actions are SHA-pinned and covered by the existing Dependabot `github-actions` group.
+
 **Changelog.** `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/) (Added/Changed/Fixed/Internal). Add entries under `## [Unreleased]` as you work; promote them to a versioned heading at release time (step 2 above).
 
 **CI workflows** (`.github/workflows/`):
 - `build.yml` — compile + test + jar. Triggers on **push to `main`** and **non-draft `pull_request`s**, both with a docs `paths-ignore` (`**.md`, `docs/**`, `LICENSE`, `.gitignore`), so docs-only changes (like this file) don't build. A branch with no PR gets no CI; open a **draft PR** and mark it ready to trigger one. Runs on **Temurin JDK 25** (not the host's 26).
-- `release.yml` — tag-only, no path filter.
+- `release.yml` — tag-only, no path filter. Builds + GitHub Release, then the marketplace publish steps (Modrinth/CurseForge via `mc-publish`, Hangar via `Hangar-Publish`) — see **Marketplace publishing** above.
 - All actions are **pinned to a full commit SHA** with a `# vX.Y.Z` comment; **Dependabot** (`.github/dependabot.yml`, weekly, grouped) keeps them current. When bumping an action, update both the SHA and the comment. `build.yml` is `permissions: contents: read`; `release.yml` is `contents: write`.
 - If branch protection with **required status checks** is ever added, beware: the `paths-ignore` filter and the draft `if:` skip mean a check may never report, which can block a docs/draft PR's merge — add a passthrough job then.
