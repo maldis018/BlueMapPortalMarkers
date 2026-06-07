@@ -37,7 +37,7 @@ jobs:
       # Third-party and first-party actions are pinned to a full commit SHA
       # (mutable tags can be repointed); the trailing comment tracks the version.
       # Dependabot (.github/dependabot.yml) keeps these SHAs up to date.
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # JDK 25 (LTS): the project compiles --release 25 and the pinned Gradle 9.4
       # wrapper runs on JDK 25, so CI does not need the dev host's JDK 26.
