@@ -25,7 +25,7 @@ Each portal is rendered as a clickable **POI marker** at the frame centroid, wit
 
 ## Installation
 
-1. Build the jar (see below) or download a release.
+1. Build the jar (see below), download a [GitHub release](https://github.com/maldis018/BlueMapPortalMarkers/releases), or grab it from [Modrinth](https://modrinth.com/plugin/bluemapportalmarkers).
 2. Drop `BlueMapPortalMarkers-<version>.jar` into your server's `plugins/` folder, alongside BlueMap.
 3. Start/restart the server. A `plugins/BlueMapPortalMarkers/config.yml` is created on first run.
 4. Open BlueMap and toggle the **Nether Portals** layer in the layer/marker menu.

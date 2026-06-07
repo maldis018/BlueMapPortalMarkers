@@ -5,6 +5,16 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Internal
+
+- CI now publishes each tagged release to **Modrinth, CurseForge, and Hangar**
+  in addition to the GitHub Release (loaders `paper`/`purpur`, Minecraft 26.1.x).
+  Modrinth + CurseForge go through one SHA-pinned `mc-publish` step; Hangar through
+  a separate `Hangar-Publish` step (under the `PAPER` platform). Each step skips
+  cleanly until its marketplace token/project is configured.
+
 ## [0.4.0] - 2026-06-02
 
 ### Added

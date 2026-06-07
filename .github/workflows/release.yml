@@ -13,6 +13,13 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Marketplace tokens are surfaced as env so each publish step can be *skipped*
+    # (not failed) until that marketplace is configured with a repo secret. This
+    # keeps a release green while CurseForge/Hangar projects are still being set up.
+    env:
+      MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+      CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+      HANGAR_TOKEN: ${{ secrets.HANGAR_TOKEN }}
     steps:
       # Actions pinned to a full commit SHA (see build.yml); Dependabot updates them.
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -35,3 +42,55 @@ jobs:
           files: build/libs/BlueMapPortalMarkers-*.jar
           fail_on_unmatched_files: true
           generate_release_notes: true
+
+      # Plugin version without the leading "v" (e.g. v0.5.0 -> 0.5.0) for the
+      # marketplace version strings below.
+      - name: Resolve plugin version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # Modrinth + CurseForge in one step. mc-publish skips any platform whose id
+      # or token is absent, so this is safe before CurseForge is set up. Loaders
+      # paper/purpur; game version 26.1.x (Minecraft's new year.drop scheme — the
+      # plugin needs Paper 26.1+ for the POI API). Add further 26.1.x patches only
+      # if they exist in each platform's version registry.
+      - name: Publish to Modrinth & CurseForge
+        if: ${{ env.MODRINTH_TOKEN != '' || env.CURSEFORGE_TOKEN != '' }}
+        uses: Kira-NT/mc-publish@995edadc13559a8b28d0b7e6571229f067ec7659 # v3.3
+        with:
+          name: BlueMapPortalMarkers ${{ steps.ver.outputs.version }}
+          version: ${{ steps.ver.outputs.version }}
+          version-type: release
+          files: build/libs/BlueMapPortalMarkers-*.jar
+          loaders: |
+            paper
+            purpur
+          game-versions: |
+            26.1.2
+          changelog-file: CHANGELOG.md
+
+          modrinth-id: bluemapportalmarkers
+          modrinth-token: ${{ env.MODRINTH_TOKEN }}
+
+          # CurseForge: create the project, then set repo variable CURSEFORGE_ID
+          # (numeric project id) and the CURSEFORGE_TOKEN secret. Until then this
+          # platform is skipped (empty id/token).
+          curseforge-id: ${{ vars.CURSEFORGE_ID }}
+          curseforge-token: ${{ env.CURSEFORGE_TOKEN }}
+
+      # Hangar (PaperMC's official repo) — mc-publish has no Hangar support, hence
+      # a dedicated action. Hangar has no Purpur platform; Paper plugins publish
+      # under PAPER. Confirm the slug + platform_dependencies shape against the
+      # Hangar project / action README on the first real run.
+      - name: Publish to Hangar
+        if: ${{ env.HANGAR_TOKEN != '' }}
+        uses: milkdrinkers/Hangar-Publish@4f193ca77db89ad49f293024f58ee172e01b3099 # v2.2.0
+        with:
+          api_token: ${{ env.HANGAR_TOKEN }}
+          slug: BlueMapPortalMarkers
+          version: ${{ steps.ver.outputs.version }}
+          channel: Release
+          files: |
+            [{ "path": "build/libs/BlueMapPortalMarkers-*.jar", "platforms": ["PAPER"] }]
+          platform_dependencies: |
+            { "PAPER": ["26.1.2"] }
