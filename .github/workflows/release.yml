@@ -22,10 +22,10 @@ jobs:
       HANGAR_TOKEN: ${{ secrets.HANGAR_TOKEN }}
     steps:
       # Actions pinned to a full commit SHA (see build.yml); Dependabot updates them.
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up JDK 25
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
           java-version: "25"
@@ -37,7 +37,7 @@ jobs:
         run: ./gradlew build --no-daemon
 
       - name: Publish release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: build/libs/BlueMapPortalMarkers-*.jar
           fail_on_unmatched_files: true
@@ -56,7 +56,7 @@ jobs:
       # if they exist in each platform's version registry.
       - name: Publish to Modrinth & CurseForge
         if: ${{ env.MODRINTH_TOKEN != '' || env.CURSEFORGE_TOKEN != '' }}
-        uses: Kira-NT/mc-publish@995edadc13559a8b28d0b7e6571229f067ec7659 # v3.3
+        uses: Kira-NT/mc-publish@52307b03863581dec6b652b83e597aec02ebb075 # v3.3
         with:
           name: BlueMapPortalMarkers ${{ steps.ver.outputs.version }}
           version: ${{ steps.ver.outputs.version }}
